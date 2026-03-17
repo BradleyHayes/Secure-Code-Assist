@@ -1,5 +1,5 @@
 {
-  "name": "CodeCleaner Pro - Local Privacy Guard",
-  "description": "A high-fidelity dashboard for a C# application that uses local deep learning to scrub sensitive data from source code before AI processing.",
+  "name": "Secure Code Assist",
+  "description": "A high-fidelity dashboard for an application that uses local deep learning to scrub sensitive data from source code before AI processing.",
   "requestFramePermissions": []
 }

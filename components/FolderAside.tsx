@@ -25,15 +25,15 @@ const FolderAside: React.FC<FolderAsideProps> = ({
       .map(folder => (
         <div key={folder.id} className="select-none">
           <div 
-            className="group flex items-center gap-2 px-3 py-1.5 hover:bg-slate-800 rounded-md cursor-pointer transition-colors"
+            className="group flex items-center gap-2 px-3 py-1.5 hover:bg-teal-100 rounded-md cursor-pointer transition-colors"
             style={{ paddingLeft: `${depth * 12 + 12}px` }}
           >
-            <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-            <Folder className="w-4 h-4 text-indigo-400" />
+            <ChevronDown className="w-3.5 h-3.5 text-teal-400" />
+            <Folder className="w-4 h-4 text-orange-400" />
             {editingId === folder.id ? (
               <input
                 autoFocus
-                className="bg-slate-900 text-xs text-slate-200 border border-indigo-500 rounded px-1 outline-none w-24"
+                className="bg-white text-xs text-slate-800 border border-teal-500 rounded px-1 outline-none w-24"
                 defaultValue={folder.name}
                 onBlur={(e) => {
                   onRenameFolder(folder.id, e.target.value);
@@ -42,14 +42,14 @@ const FolderAside: React.FC<FolderAsideProps> = ({
                 onKeyDown={(e) => e.key === 'Enter' && setEditingId(null)}
               />
             ) : (
-              <span className="text-xs font-medium text-slate-300 truncate flex-1">{folder.name}</span>
+              <span className="text-xs font-medium text-slate-700 truncate flex-1">{folder.name}</span>
             )}
             
             <div className="hidden group-hover:flex items-center gap-1">
-              <button onClick={() => setEditingId(folder.id)} className="p-1 hover:text-indigo-400"><Edit2 className="w-3 h-3" /></button>
-              <button onClick={() => onAddFolder(folder.id)} className="p-1 hover:text-indigo-400"><Plus className="w-3 h-3" /></button>
+              <button onClick={() => setEditingId(folder.id)} className="p-1 hover:text-teal-600"><Edit2 className="w-3 h-3" /></button>
+              <button onClick={() => onAddFolder(folder.id)} className="p-1 hover:text-teal-600"><Plus className="w-3 h-3" /></button>
               {folder.parentId !== null && (
-                <button onClick={() => onDeleteFolder(folder.id)} className="p-1 hover:text-rose-400"><Trash2 className="w-3 h-3" /></button>
+                <button onClick={() => onDeleteFolder(folder.id)} className="p-1 hover:text-rose-600"><Trash2 className="w-3 h-3" /></button>
               )}
             </div>
           </div>
@@ -61,7 +61,7 @@ const FolderAside: React.FC<FolderAsideProps> = ({
                 key={file.id}
                 onClick={() => onSelectFile(file.id)}
                 className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded-md text-[11px] transition-colors ${
-                  selectedFileId === file.id ? 'bg-indigo-600/20 text-indigo-300 font-semibold' : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                  selectedFileId === file.id ? 'bg-teal-600/20 text-teal-700 font-semibold' : 'text-slate-500 hover:bg-teal-100 hover:text-teal-800'
                 }`}
                 style={{ paddingLeft: `${(depth + 1) * 12 + 16}px` }}
               >
@@ -77,12 +77,12 @@ const FolderAside: React.FC<FolderAsideProps> = ({
   };
 
   return (
-    <div className="w-64 border-r border-slate-800 bg-slate-900/40 flex flex-col shrink-0">
-      <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/60">
-        <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Explorer</h2>
+    <div className="w-64 border-r border-orange-200 bg-teal-50/50 flex flex-col shrink-0">
+      <div className="p-4 border-b border-orange-100 flex justify-between items-center bg-teal-100/40">
+        <h2 className="text-[10px] font-bold text-teal-700 uppercase tracking-widest">Explorer</h2>
         <button 
           onClick={() => onAddFolder(null)}
-          className="p-1.5 hover:bg-slate-800 rounded text-slate-400"
+          className="p-1.5 hover:bg-teal-200 rounded text-teal-600"
         >
           <FolderPlus className="w-4 h-4" />
         </button>

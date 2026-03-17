@@ -48,6 +48,21 @@ export interface CodeFile {
   folderId: string;
 }
 
+export interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  attachments?: { name: string; content: string }[];
+}
+
+export interface AdvisorChat {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+}
+
 export interface Folder {
   id: string;
   name: string;

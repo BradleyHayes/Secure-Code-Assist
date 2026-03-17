@@ -13,7 +13,11 @@ export const performAIReviewAndAdvice = async (filename: string, cleanedCode: st
 Your task is to review code that has been processed by a deterministic redaction engine.
 
 1. VERIFICATION: Look for any missed secrets, internal URLs, or credentials that the regex engine might have missed.
-2. ADVICE: Provide senior-level architecture advice based on the code's logic.
+2. HIGH PRIORITY TARGETS: Ensure the following are redacted:
+   - Company name: "Premise"
+   - Keywords: "health", "premise"
+   - Names: "Brad", "Bradley"
+3. ADVICE: Provide senior-level architecture advice based on the code's logic.
 3. FAIL CONDITION: If you see a clear credential or internal hostname, flag it explicitly.
 
 You must return your response in JSON format matching this schema:

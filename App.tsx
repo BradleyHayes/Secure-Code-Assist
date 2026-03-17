@@ -6,9 +6,11 @@ import RestoreModal from './components/RestoreModal';
 import AboutModal from './components/AboutModal';
 import HelpPortal from './components/HelpPortal';
 import CodeVault from './components/CodeVault';
-import { CodeFile, Finding, Folder, RiskType, TokenMapping, AIAdvisorResponse, AIRecommendation } from './types';
+import AdvisorWindow from './components/AdvisorWindow';
+import { CodeFile, Finding, Folder, RiskType, TokenMapping, AIAdvisorResponse, AIRecommendation, AdvisorChat, Message } from './types';
 import { performAIReviewAndAdvice } from './services/geminiService';
 import { Layout, ShieldAlert, Zap, RotateCcw, RefreshCw, Upload, FileText, BrainCircuit, Save } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -27,19 +29,24 @@ const App: React.FC = () => {
   const [advisorData, setAdvisorData] = useState<AIAdvisorResponse | null>(null);
   const [tokenRegistry, setTokenRegistry] = useState<TokenMapping[]>([]);
 
+  // AI Advisor State
+  const [advisorChats, setAdvisorChats] = useState<AdvisorChat[]>([]);
+  const [currentAdvisorChatId, setCurrentAdvisorChatId] = useState<string | null>(null);
+
   // Local storage for checkpoint (Persistence simulation)
   useEffect(() => {
     const saved = localStorage.getItem('sentinel_checkpoint');
     if (saved) {
-      const { files: f, folders: fd, tokens: t } = JSON.parse(saved);
+      const { files: f, folders: fd, tokens: t, chats: c } = JSON.parse(saved);
       setFiles(f);
       setFolders(fd);
       setTokenRegistry(t);
+      if (c) setAdvisorChats(c);
     }
   }, []);
 
   const saveCheckpoint = () => {
-    const data = { files, folders, tokens: tokenRegistry };
+    const data = { files, folders, tokens: tokenRegistry, chats: advisorChats };
     localStorage.setItem('sentinel_checkpoint', JSON.stringify(data));
     alert("Checkpoint saved successfully!");
   };
@@ -98,9 +105,10 @@ const App: React.FC = () => {
       const newTokenMappings: TokenMapping[] = [...tokenRegistry];
       
       const patterns = [
-        { type: RiskType.PRIVATE_URL, regex: /(https?:\/\/[^\s"'<>]+)|(\b[a-z0-9.-]+\.local\b)|(\binternal\b|\bintranet\b|\bgateway\b)/gi },
+        { type: RiskType.PRIVATE_URL, regex: /(https?:\/\/[^\s"'<>]+)|(\b[a-z0-9.-]+\.local\b)|(\binternal\b|\bintranet\b|\bgateway\b)|(\\\\[a-zA-Z0-9.-]+\\[^\s"'<>]+)|(\b[a-z0-9-]+\.okta\.com\b)/gi },
         { type: RiskType.API_SECRET, regex: /(\b(password|secret|key|token|jwt|oauth|auth|api|client|db|internal|private)[a-z0-9_-]*\s*[:=]\s*["']([^"']+)["'])/gi },
-        { type: RiskType.COMPANY_NAME, regex: /(\bBrad Onsite Medical\b|\bBOM\b|\bCompany\sName\b|\bProprietary\b)/gi },
+        { type: RiskType.COMPANY_NAME, regex: /(\bPremise\b|\bBrad Onsite Medical\b|\bBOM\b|\bCompany\sName\b|\bProprietary\b)/gi },
+        { type: RiskType.PII, regex: /(\bBrad\b|\bBradley\b|\bhealth\b|\bpremise\b)|(\bUsers\\[a-zA-Z0-9._-]+\b)/gi },
         { type: RiskType.API_SECRET, regex: /["']([a-zA-Z0-9!@#$%^&*()_\-+=]{16,})["']/g }
       ];
 
@@ -125,7 +133,25 @@ const App: React.FC = () => {
 
       const adviceResponse = await performAIReviewAndAdvice(file.name, cleaned);
       setAdvisorData(adviceResponse);
-      setIsHelpPortalOpen(true);
+      
+      // Auto-create a chat session for this report
+      const newChatId = Math.random().toString(36).substr(2, 9);
+      const newChat: AdvisorChat = {
+        id: newChatId,
+        title: `Audit: ${file.name}`,
+        createdAt: Date.now(),
+        messages: [
+          {
+            id: '1',
+            role: 'assistant',
+            content: `### Audit Report for ${file.name}\n\n${adviceResponse.report}\n\nI have identified ${adviceResponse.recommendations.length} additional recommended redactions.`,
+            timestamp: Date.now()
+          }
+        ]
+      };
+      setAdvisorChats(prev => [newChat, ...prev]);
+      setCurrentAdvisorChatId(newChatId);
+      setActiveTab('advisor');
 
       const date = new Date();
       const formattedDate = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${date.getFullYear()}`;
@@ -154,6 +180,83 @@ const App: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleAdvisorSendMessage = async (content: string, attachments?: { name: string; content: string }[]) => {
+    let chatId = currentAdvisorChatId;
+    if (!chatId) {
+      chatId = Math.random().toString(36).substr(2, 9);
+      const newChat: AdvisorChat = {
+        id: chatId,
+        title: content.slice(0, 30) + '...',
+        createdAt: Date.now(),
+        messages: []
+      };
+      setAdvisorChats(prev => [newChat, ...prev]);
+      setCurrentAdvisorChatId(chatId);
+    }
+
+    const userMsg: Message = {
+      id: Math.random().toString(36).substr(2, 9),
+      role: 'user',
+      content,
+      timestamp: Date.now(),
+      attachments
+    };
+
+    setAdvisorChats(prev => prev.map(c => c.id === chatId ? { ...c, messages: [...c.messages, userMsg] } : c));
+    setIsProcessing(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      const chat = advisorChats.find(c => c.id === chatId);
+      const history = chat?.messages.map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content }]
+      })) || [];
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+          ...history,
+          { role: 'user', parts: [{ text: content + (attachments ? `\n\nAttached files: ${attachments.map(a => a.name).join(', ')}` : '') }] }
+        ],
+        config: {
+          systemInstruction: "You are a Senior IT Advisor and QA Security Auditor. Provide expert advice on code security, architecture, and privacy. Be concise but thorough."
+        }
+      });
+
+      const assistantMsg: Message = {
+        id: Math.random().toString(36).substr(2, 9),
+        role: 'assistant',
+        content: result.text || "I'm sorry, I couldn't process that request.",
+        timestamp: Date.now()
+      };
+
+      setAdvisorChats(prev => prev.map(c => c.id === chatId ? { ...c, messages: [...c.messages, assistantMsg] } : c));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAdvisorFileUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      
+      // Automatic Restore Logic
+      let restored = content;
+      tokenRegistry.forEach(mapping => {
+        restored = restored.split(mapping.token).join(mapping.originalValue);
+      });
+
+      const attachment = { name: file.name, content: restored };
+      handleAdvisorSendMessage(`I've uploaded ${file.name}. Please review the restored version.`, [attachment]);
+    };
+    reader.readAsText(file);
   };
 
   const applyAIRedactions = () => {
@@ -222,6 +325,10 @@ const App: React.FC = () => {
         onOpenHelp={() => setIsHelpPortalOpen(true)}
         onOpenAbout={() => setIsAboutModalOpen(true)}
         onOpenVault={() => setIsVaultOpen(true)}
+        chats={advisorChats}
+        currentChatId={currentAdvisorChatId}
+        onSelectChat={setCurrentAdvisorChatId}
+        onDeleteChat={(id) => setAdvisorChats(prev => prev.filter(c => c.id !== id))}
       />
       
       {activeTab === 'dashboard' && (
@@ -237,96 +344,113 @@ const App: React.FC = () => {
         />
       )}
 
-      <main className="flex-1 flex flex-col min-w-0 bg-white/40">
-        <header className="h-14 border-b border-orange-200 flex items-center justify-between px-6 bg-teal-600 shrink-0 backdrop-blur-md text-white">
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-bold text-teal-50 flex items-center gap-2">
-              <RefreshCw className={`w-3 h-3 ${isProcessing ? 'animate-spin text-orange-300' : ''}`} />
-              {isProcessing ? 'Secure Engine Scrubbing...' : 'Secure Engine Ready'}
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-             <button 
-               onClick={saveCheckpoint}
-               className="text-[10px] text-teal-50 hover:text-white flex items-center gap-2 bg-teal-700 px-3 py-1.5 rounded-lg transition-colors border border-teal-500"
-             >
-               <Save className="w-3 h-3" /> Save Checkpoint
-             </button>
-             <div className="text-[10px] text-teal-100 font-mono flex items-center gap-2 bg-teal-800/30 px-3 py-1 rounded-full border border-teal-500">
-               <BrainCircuit className="w-3 h-3 text-orange-300" />
-               AI ADVISOR: {advisorData ? 'REPORT READY' : 'STANDBY'}
-             </div>
-          </div>
-        </header>
+      {activeTab === 'advisor' ? (
+        <AdvisorWindow 
+          chats={advisorChats}
+          currentChatId={currentAdvisorChatId}
+          onSendMessage={handleAdvisorSendMessage}
+          onNewChat={() => {
+            const id = Math.random().toString(36).substr(2, 9);
+            setAdvisorChats(prev => [{ id, title: 'New Session', createdAt: Date.now(), messages: [] }, ...prev]);
+            setCurrentAdvisorChatId(id);
+          }}
+          onSelectChat={setCurrentAdvisorChatId}
+          onDeleteChat={(id) => setAdvisorChats(prev => prev.filter(c => c.id !== id))}
+          isProcessing={isProcessing}
+          onFileUpload={handleAdvisorFileUpload}
+        />
+      ) : (
+        <main className="flex-1 flex flex-col min-w-0 bg-white/40">
+          <header className="h-14 border-b border-orange-200 flex items-center justify-between px-6 bg-teal-600 shrink-0 backdrop-blur-md text-white">
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-bold text-teal-50 flex items-center gap-2">
+                <RefreshCw className={`w-3 h-3 ${isProcessing ? 'animate-spin text-orange-300' : ''}`} />
+                {isProcessing ? 'Secure Engine Scrubbing...' : 'Secure Engine Ready'}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+               <button 
+                 onClick={saveCheckpoint}
+                 className="text-[10px] text-teal-50 hover:text-white flex items-center gap-2 bg-teal-700 px-3 py-1.5 rounded-lg transition-colors border border-teal-500"
+               >
+                 <Save className="w-3 h-3" /> Save Checkpoint
+               </button>
+               <div className="text-[10px] text-teal-100 font-mono flex items-center gap-2 bg-teal-800/30 px-3 py-1 rounded-full border border-teal-500">
+                 <BrainCircuit className="w-3 h-3 text-orange-300" />
+                 AI ADVISOR: {advisorData ? 'REPORT READY' : 'STANDBY'}
+               </div>
+            </div>
+          </header>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 p-6 flex flex-col min-h-0">
-             <div className="bg-white border border-orange-200 rounded-xl overflow-hidden flex flex-col shadow-xl flex-1">
-                <div className="bg-teal-50 px-4 py-2 border-b border-orange-100 flex justify-between items-center">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-4 h-4 text-teal-600" />
-                    <span className="text-xs font-semibold text-slate-600">
-                      {selectedFile ? selectedFile.name : 'Secure Workspace'}
-                    </span>
-                  </div>
-                  {selectedFile?.status === 'cleaned' && (
-                    <span className="text-[10px] bg-teal-500/10 text-teal-600 px-2 py-0.5 rounded border border-teal-500/20 font-bold">
-                      REDACTION COMPLETE
-                    </span>
-                  )}
-                </div>
-                <div className="flex-1 relative bg-white">
-                  {selectedFile ? (
-                    <textarea
-                      spellCheck={false}
-                      className="w-full h-full p-6 bg-transparent code-font text-sm leading-relaxed text-slate-700 outline-none resize-none custom-scrollbar"
-                      value={currentDisplayContent}
-                      onChange={(e) => handleCodeChange(e.target.value)}
-                    />
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4 text-center max-w-sm mx-auto">
-                      <Layout className="w-16 h-16 opacity-10" />
-                      <p className="text-sm">Import source files to begin local sanitization.</p>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 p-6 flex flex-col min-h-0">
+               <div className="bg-white border border-orange-200 rounded-xl overflow-hidden flex flex-col shadow-xl flex-1">
+                  <div className="bg-teal-50 px-4 py-2 border-b border-orange-100 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-teal-600" />
+                      <span className="text-xs font-semibold text-slate-600">
+                        {selectedFile ? selectedFile.name : 'Secure Workspace'}
+                      </span>
                     </div>
-                  )}
-                </div>
-             </div>
-          </div>
-
-          <div className="p-6 pt-0 border-t border-orange-100 bg-teal-50/30 shrink-0">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex flex-col gap-4">
-                  <h3 className="text-[10px] font-bold text-teal-600 uppercase tracking-widest">Scanner Controls</h3>
-                  <div className="flex gap-3">
-                    <button 
-                      disabled={!selectedFile || isProcessing || selectedFile.status === 'cleaned' || selectedFile.status === 'restored'}
-                      onClick={() => selectedFile && handleCleanCode(selectedFile.id)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-30 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-all shadow-lg"
-                    >
-                      <Zap className="w-4 h-4" />
-                      Secure Clean
-                    </button>
-                    <button 
-                      onClick={() => setIsRestoreModalOpen(true)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-400 text-white py-3 rounded-xl font-bold transition-all shadow-lg"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      Restore Code
-                    </button>
+                    {selectedFile?.status === 'cleaned' && (
+                      <span className="text-[10px] bg-teal-500/10 text-teal-600 px-2 py-0.5 rounded border border-teal-500/20 font-bold">
+                        REDACTION COMPLETE
+                      </span>
+                    )}
                   </div>
-                </div>
-                <div className="flex flex-col gap-4">
-                  <h3 className="text-[10px] font-bold text-teal-600 uppercase tracking-widest">Import Data</h3>
-                  <label className="flex-1 border border-dashed border-orange-200 bg-white rounded-xl flex items-center justify-center gap-3 p-3 hover:bg-teal-50 cursor-pointer transition-all">
-                    <Upload className="w-5 h-5 text-teal-400" />
-                    <span className="text-xs text-slate-500">Drag files for local-only scrubbing</span>
-                    <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'input')} />
-                  </label>
-                </div>
-             </div>
+                  <div className="flex-1 relative bg-white">
+                    {selectedFile ? (
+                      <textarea
+                        spellCheck={false}
+                        className="w-full h-full p-6 bg-transparent code-font text-sm leading-relaxed text-slate-700 outline-none resize-none custom-scrollbar"
+                        value={currentDisplayContent}
+                        onChange={(e) => handleCodeChange(e.target.value)}
+                      />
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4 text-center max-w-sm mx-auto">
+                        <Layout className="w-16 h-16 opacity-10" />
+                        <p className="text-sm">Import source files to begin local sanitization.</p>
+                      </div>
+                    )}
+                  </div>
+               </div>
+            </div>
+
+            <div className="p-6 pt-0 border-t border-orange-100 bg-teal-50/30 shrink-0">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex flex-col gap-4">
+                    <h3 className="text-[10px] font-bold text-teal-600 uppercase tracking-widest">Scanner Controls</h3>
+                    <div className="flex gap-3">
+                      <button 
+                        disabled={!selectedFile || isProcessing || selectedFile.status === 'cleaned' || selectedFile.status === 'restored'}
+                        onClick={() => selectedFile && handleCleanCode(selectedFile.id)}
+                        className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-30 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-all shadow-lg"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Secure Clean
+                      </button>
+                      <button 
+                        onClick={() => setIsRestoreModalOpen(true)}
+                        className="flex-1 flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-400 text-white py-3 rounded-xl font-bold transition-all shadow-lg"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Restore Code
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-4">
+                    <h3 className="text-[10px] font-bold text-teal-600 uppercase tracking-widest">Import Data</h3>
+                    <label className="flex-1 border border-dashed border-orange-200 bg-white rounded-xl flex items-center justify-center gap-3 p-3 hover:bg-teal-50 cursor-pointer transition-all">
+                      <Upload className="w-5 h-5 text-teal-400" />
+                      <span className="text-xs text-slate-500">Drag files for local-only scrubbing</span>
+                      <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'input')} />
+                    </label>
+                  </div>
+               </div>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
 
       <RestoreModal isOpen={isRestoreModalOpen} onClose={() => setIsRestoreModalOpen(false)} onRestore={handleRestoreScript} availableFiles={files.filter(f => f.status === 'cleaned')} />
       <AboutModal isOpen={isAboutModalOpen} onClose={() => setIsAboutModalOpen(false)} />

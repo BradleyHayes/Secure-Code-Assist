@@ -176,9 +176,15 @@ public class SecureScanner {
         string output = input;
 
         var rules = new[] {
-            new { Type = "URL", Regex = @"(https?://[^\s""'<>]+)|(\b[a-z0-9.-]+\.local\b)" },
+            // URL, Local Host, UNC Paths, and Okta Rule
+            new { Type = "URL", Regex = @"(https?://[^\s""'<>]+)|(\b[a-z0-9.-]+\.local\b)|(\\\\[a-zA-Z0-9.-]+\\[^\s""'<>]+)|(\b[a-z0-9-]+\.okta\.com\b)" },
+            // Enhanced Credential/Identifier Rule
             new { Type = "SECRET", Regex = @"(\b(password|secret|key|token|jwt|api|client|db|auth|internal|private)[a-z0-9_-]*\s*[:=]\s*[""']([^""']+)[""'])" },
-            new { Type = "COMPANY", Regex = @"(\bBrad Onsite Medical\b|\bBOM\b)" },
+            // Specific Company Name Rule
+            new { Type = "COMPANY", Regex = @"(\bPremise\b|\bBrad Onsite Medical\b|\bBOM\b)" },
+            // PII, Keywords, and User Profile Paths
+            new { Type = "PII", Regex = @"(\bBrad\b|\bBradley\b|\bhealth\b|\bpremise\b)|(\bUsers\\[a-zA-Z0-9._-]+\b)" },
+            // Random Literal Rule (16+ chars)
             new { Type = "LITERAL", Regex = @"[""']([a-zA-Z0-9]{16,})[""']" }
         };
 

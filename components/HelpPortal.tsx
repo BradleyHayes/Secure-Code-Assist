@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { X, Book, Rocket, Code2, ShieldCheck, ListChecks, FileText, Settings, HelpCircle, ExternalLink, BrainCircuit, Printer, Copy, CheckCircle, Home, Files } from 'lucide-react';
+import { X, Book, Rocket, Code2, ShieldCheck, ListChecks, FileText, Settings, HelpCircle, ExternalLink, BrainCircuit, Printer, Copy, CheckCircle, Home, Files, Download } from 'lucide-react';
 import { AIAdvisorResponse, CodeFile } from '../types';
 
 interface HelpPortalProps {
@@ -32,6 +32,79 @@ const HelpPortal: React.FC<HelpPortalProps> = ({ isOpen, onClose, advisorData, o
       element.click();
       document.body.removeChild(element);
     }
+  };
+
+  const handleDownloadSetup = () => {
+    const script = `# Secure Code Assist - Windows Setup Script
+# This script sets up the local environment and creates a desktop shortcut.
+
+$ErrorActionPreference = "Stop"
+
+Write-Host "--- Secure Code Assist: Local Privacy Guard Setup ---" -ForegroundColor Cyan
+
+# 0. Verify Location
+if (-not (Test-Path "package.json")) {
+    Write-Host "\`n[ERROR] package.json not found in the current directory!" -ForegroundColor Red
+    Write-Host "Please make sure you have extracted the ZIP file and placed this script INSIDE the project folder."
+    Write-Host "Current Directory: $PSScriptRoot"
+    Write-Host "\`nPress any key to exit..."
+    $null = [Console]::ReadKey($true)
+    exit
+}
+
+# 0.1 Sanitize Filenames (Fix Windows compatibility for migrated history)
+Write-Host "[0.1] Sanitizing filenames for Windows compatibility..." -NoNewline
+Get-ChildItem -Path "$PSScriptRoot\\migrated_prompt_history" -Filter "*:*" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+    $newName = $_.Name -replace ':', '-'
+    Rename-Item -Path $_.FullName -NewName $newName
+}
+Write-Host " Done." -ForegroundColor Green
+
+# 1. Check for Node.js
+Write-Host "[1/4] Checking for Node.js..." -NoNewline
+try {
+    $nodeVersion = node -v
+    Write-Host " Found ($nodeVersion)" -ForegroundColor Green
+} catch {
+    Write-Host " Not Found!" -ForegroundColor Red
+    Write-Host "Please install Node.js from https://nodejs.org/ before continuing."
+    exit
+}
+
+# 2. Install Dependencies
+Write-Host "[2/4] Installing dependencies (this may take a minute)..."
+npm install
+
+# 3. Build Application
+Write-Host "[3/4] Building production assets..."
+npm run build
+
+# 4. Create Desktop Shortcut
+Write-Host "[4/4] Creating Desktop Shortcut..."
+$WshShell = New-Object -ComObject WScript.Shell
+$ShortcutPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Desktop"), "Secure Code Assist.lnk")
+$Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+$Shortcut.TargetPath = "powershell.exe"
+$Shortcut.Arguments = "-NoExit -Command \`"cd '$PSScriptRoot'; npm run dev\`""
+$Shortcut.WorkingDirectory = $PSScriptRoot
+$Shortcut.IconLocation = "shell32.dll,45" # Lock icon
+$Shortcut.Description = "Launch Secure Code Assist Local Privacy Guard"
+$Shortcut.Save()
+
+Write-Host "\`nSetup Complete!" -ForegroundColor Green
+Write-Host "You can now launch the application using the 'Secure Code Assist' shortcut on your Desktop."
+Write-Host "The application will run locally on http://localhost:3000"
+Write-Host "\`n[TIP] If http://localhost:3000 shows a blank page, try http://127.0.0.1:3000 instead."
+Write-Host "\`nPress any key to exit..."
+$null = [Console]::ReadKey($true)
+`;
+    const element = document.createElement("a");
+    const file = new Blob([script], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = "setup.ps1";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
   };
 
   return (
@@ -151,6 +224,81 @@ const HelpPortal: React.FC<HelpPortalProps> = ({ isOpen, onClose, advisorData, o
                 </div>
               </section>
             )}
+
+            {/* Section: WINDOWS INSTALLATION */}
+            <section className="space-y-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-teal-500/10 rounded-lg">
+                  <Rocket className="w-5 h-5 text-teal-600" />
+                </div>
+                <h2 className="text-2xl font-bold">Windows Installation</h2>
+              </div>
+              
+              <div className="bg-white border border-orange-200 rounded-3xl p-8 shadow-xl space-y-6">
+                <p className="text-slate-700 leading-relaxed">
+                  To install **Secure Code Assist** as a local application on your Windows machine, follow these steps. This ensures that all scrubbing logic remains entirely within your local network.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 bg-teal-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+                    <h4 className="font-bold text-sm">Export Code</h4>
+                    <p className="text-xs text-slate-500">Go to **Settings** and select **Export to ZIP** to download the source code.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 bg-teal-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+                    <h4 className="font-bold text-sm">Download Script</h4>
+                    <p className="text-xs text-slate-500">Download the **setup.ps1** script and place it in the root of the extracted folder.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="w-8 h-8 bg-teal-600 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+                    <h4 className="font-bold text-sm">Run Setup</h4>
+                    <p className="text-xs text-slate-500">Right-click **setup.ps1** and select **Run with PowerShell**. Follow the prompts.</p>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-orange-100 flex flex-col sm:flex-row gap-4">
+                  <button 
+                    onClick={handleDownloadSetup}
+                    className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download setup.ps1
+                  </button>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(`powershell.exe -ExecutionPolicy Bypass -File .\\setup.ps1`);
+                      alert("Command copied to clipboard!");
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 bg-white border border-teal-600 text-teal-600 hover:bg-teal-50 px-6 py-3 rounded-xl font-bold transition-all"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy Run Command
+                  </button>
+                </div>
+                
+                <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-3">
+                  <div>
+                    <p className="text-[10px] text-orange-700 font-bold uppercase tracking-widest mb-1">Prerequisites</p>
+                    <p className="text-xs text-slate-600">
+                      Requires **Node.js 18+** installed on your system. The script will automatically install dependencies and create a desktop shortcut for easy access.
+                    </p>
+                  </div>
+                  <div className="pt-3 border-t border-orange-200">
+                    <p className="text-[10px] text-orange-700 font-bold uppercase tracking-widest mb-1">Troubleshooting: Execution Policy Error</p>
+                    <p className="text-xs text-slate-600">
+                      If you see a "digitally signed" or "Execution Policy" error, use the **Copy Run Command** button above. It includes a bypass flag to allow the local setup script to run.
+                    </p>
+                  </div>
+                  <div className="pt-3 border-t border-orange-200">
+                    <p className="text-[10px] text-orange-700 font-bold uppercase tracking-widest mb-1">Troubleshooting: Blank Page</p>
+                    <p className="text-xs text-slate-600">
+                      If the browser opens but shows a blank page, try using **http://127.0.0.1:3000** instead of localhost.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
 
             {/* Section: SOURCE CODE DELIVERABLES */}
             <section className="space-y-6">
